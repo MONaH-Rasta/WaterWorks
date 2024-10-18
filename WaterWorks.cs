@@ -1,21 +1,19 @@
 ﻿using Newtonsoft.Json;
 using Oxide.Core;
 using System;
-using System.Linq;
 
-/*
-Added `Reset To Vanilla Defaults On Unload` (false)
-Server restarts no longer reset to vanilla defaults
-*/
+//https://umod.org/community/water-works/36796-could-you-please-add-the-water-tanks-that-go-on-car-modules?page=1#post-2
 
 namespace Oxide.Plugins
 {
-    [Info("Water Works", "nivex", "1.0.6")]
+    [Info("Water Works", "nivex", "1.0.7")]
     [Description("Control the monopoly on your water supplies.")]
     class WaterWorks : RustPlugin
     {
         private ItemModContainer bucketWaterMod;
         private ItemModContainer waterJugMod;
+        private ItemModContainer pistolWaterMod;
+        private ItemModContainer gunWaterMod;
         private ItemDefinition waterDef;
 
         private void Init()
@@ -27,6 +25,8 @@ namespace Oxide.Plugins
         {
             bucketWaterMod = ItemManager.FindItemDefinition("bucket.water")?.GetComponent<ItemModContainer>();
             waterJugMod = ItemManager.FindItemDefinition("waterjug")?.GetComponent<ItemModContainer>();
+            pistolWaterMod = ItemManager.FindItemDefinition("pistol.water")?.GetComponent<ItemModContainer>();
+            gunWaterMod = ItemManager.FindItemDefinition("gun.water")?.GetComponent<ItemModContainer>();
             waterDef = ItemManager.FindItemDefinition("water");
 
             SetLiquidContainerStackSize(true);
@@ -59,15 +59,18 @@ namespace Oxide.Plugins
 
             if (slot != null && slot.amount > num)
             {
-                slot.amount = num;                
+                slot.amount = num;
             }
         }
 
         private void SetLiquidContainerStackSize(bool state)
         {
-            foreach (var lc in BaseNetworkable.serverEntities.OfType<LiquidContainer>())
+            foreach (var entity in BaseNetworkable.serverEntities)
             {
-                SetLiquidContainerStackSize(lc, state);
+                if (entity is LiquidContainer lc)
+                {
+                    SetLiquidContainerStackSize(lc, state);
+                }
             }
         }
 
@@ -87,7 +90,7 @@ namespace Oxide.Plugins
                 lc.maxStackSize = num;
                 lc.inventory.maxStackSize = num;
                 lc.MarkDirty();
-                lc.inventory.MarkDirty();                
+                lc.inventory.MarkDirty();
                 lc.SendNetworkUpdateImmediate();
             }
             else if (lc is WaterCatcher)
@@ -110,7 +113,7 @@ namespace Oxide.Plugins
             {
                 var purifier = lc as WaterPurifier;
                 int num = state ? _config.WaterPurifier : 5000;
-                
+
                 SetSlotAmounts(lc, num);
 
                 purifier.stopWhenOutputFull = true;
@@ -119,6 +122,7 @@ namespace Oxide.Plugins
                 purifier.inventory.maxStackSize = num;
                 purifier.MarkDirty();
                 purifier.inventory.MarkDirty();
+                purifier.waterStorage.MarkDirty();
                 purifier.SendNetworkUpdateImmediate();
             }
             else if (lc is WaterPump && _config.WaterPump.StackSize > 0)
@@ -135,13 +139,49 @@ namespace Oxide.Plugins
                 pump.SendNetworkUpdateImmediate();
                 UpdateWaterPump(pump, state);
             }
+            else if (lc.prefabID == 1462241537 && _config.GroundPool > 0)
+            {
+                int num = state ? _config.GroundPool : 500;
+
+                SetSlotAmounts(lc, num);
+
+                lc.maxStackSize = num;
+                lc.inventory.maxStackSize = num;
+                lc.MarkDirty();
+                lc.inventory.MarkDirty();
+                lc.SendNetworkUpdateImmediate();
+            }
+            else if (lc.prefabID == 2030353082 && _config.BigGroundPool > 0)
+            {
+                int num = state ? _config.BigGroundPool : 2000;
+
+                SetSlotAmounts(lc, num);
+
+                lc.maxStackSize = num;
+                lc.inventory.maxStackSize = num;
+                lc.MarkDirty();
+                lc.inventory.MarkDirty();
+                lc.SendNetworkUpdateImmediate();
+            }
         }
 
         private void ConfigureWaterDefinitions(bool state)
         {
             if (bucketWaterMod != null) bucketWaterMod.maxStackSize = state ? _config.WaterBucket : 2000;
             if (waterJugMod != null) waterJugMod.maxStackSize = state ? _config.WaterJug : 5000;
+            if (pistolWaterMod != null) pistolWaterMod.maxStackSize = state ? _config.WaterPistol : 250;
+            if (gunWaterMod != null) gunWaterMod.maxStackSize = state ? _config.WaterGun : 1000;
             if (waterDef != null) waterDef.stackable = state ? _config.WaterJug * 62 : 249999;
+
+            /*var vessel = GameManager.server.FindPrefab("assets/prefabs/misc/summer_dlc/watergun/watergun.entity.prefab").GetComponent<BaseLiquidVessel>();
+
+            vessel.fillFromContainer.guid = null;
+            vessel.fillFromContainerSoundDef.template.guid = state ? "1fa0b6e2015984e88863b5b906db368c" : null;
+            vessel.fillFromContainerStartSoundDef.template.guid = state ? "1fa0b6e2015984e88863b5b906db368c" : null;
+            vessel.fillFromWorld.guid = null;
+            vessel.fillFromWorldSoundDef.template.guid = state ? "6922af838eab04048b853ceb640657de" : null;
+            vessel.fillFromWorldStartSoundDef.template.guid = state ? "6922af838eab04048b853ceb640657de" : null;*/
+            
         }
 
         private void UpdateWaterCatcher(WaterCatcher wc, bool state)
@@ -177,6 +217,13 @@ namespace Oxide.Plugins
         {
             pump.PumpInterval = state ? _config.WaterPump.Interval : 10f;
             pump.AmountPerPump = state ? _config.WaterPump.Amount : 85;
+
+            if (!pump.IsPowered())
+            {
+                pump.CancelInvoke(pump.CreateWater);
+                return;
+            }
+
             pump.CancelInvoke(pump.CreateWater);
             pump.InvokeRandomized(pump.CreateWater, pump.PumpInterval, pump.PumpInterval, pump.PumpInterval * 0.1f);
         }
@@ -217,10 +264,10 @@ namespace Oxide.Plugins
             [JsonProperty(PropertyName = "ML Capacity (vanilla: 2000)")]
             public int StackSize { get; set; } = 10000;
 
-            [JsonProperty(PropertyName = "Add Amount Of Water To Water Pumps")]
+            [JsonProperty(PropertyName = "Add Amount Of Water To Water Pumps (Vanilla: 85)")]
             public int Amount { get; set; } = 130;
 
-            [JsonProperty(PropertyName = "Add Water To Water Pumps Every X Seconds")]
+            [JsonProperty(PropertyName = "Add Water To Water Pumps Every X Seconds (Vanilla: 10)")]
             public float Interval { get; set; } = 10f;
         }
 
@@ -244,12 +291,23 @@ namespace Oxide.Plugins
             [JsonProperty(PropertyName = "Water Bucket ML Capacity (vanilla: 2000)")]
             public int WaterBucket { get; set; } = 10000;
 
+            [JsonProperty(PropertyName = "Water Ground Pool Capacity (vanilla: 500)")]
+            public int GroundPool { get; set; } = 100000;
+
+            [JsonProperty(PropertyName = "Water Big Ground Pool Capacity (vanilla: 2000)")]
+            public int BigGroundPool { get; set; } = 200000;
+
             [JsonProperty(PropertyName = "Water Purifier ML Capacity (vanilla: 5000)")]
             public int WaterPurifier { get; set; } = 25000;
 
             [JsonProperty(PropertyName = "Water Purifier (Powered) ML Capacity (vanilla: 5000)")]
             public int PoweredWaterPurifier { get; set; } = 25000;
 
+            [JsonProperty(PropertyName = "Water Pistol ML Capacity (vanilla: 250)")]
+            public int WaterPistol { get; set; } = 500;
+
+            [JsonProperty(PropertyName = "Water Gun ML Capacity (vanilla: 1000)")]
+            public int WaterGun { get; set; } = 2000;
             [JsonProperty(PropertyName = "Reset To Vanilla Defaults On Unload")]
             public bool Reset { get; set; }
         }
@@ -257,19 +315,17 @@ namespace Oxide.Plugins
         protected override void LoadConfig()
         {
             base.LoadConfig();
-
             try
             {
                 _config = Config.ReadObject<Configuration>();
-                if (_config == null) throw new Exception();
+                if (_config == null) LoadDefaultConfig();
+                SaveConfig();
             }
             catch
             {
                 PrintError("Your configuration file contains an error. Using default configuration values.");
                 LoadDefaultConfig();
             }
-
-            SaveConfig();
         }
 
         protected override void SaveConfig() => Config.WriteObject(_config);
