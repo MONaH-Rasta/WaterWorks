@@ -1,15 +1,16 @@
 ﻿using Newtonsoft.Json;
+using Oxide.Core;
 using System;
 using System.Linq;
 
 /*
-Restructed some of the config which requires you to reconfigure it
-Fixed stack size amounts and values applied to configuration defaults
+Added `Reset To Vanilla Defaults On Unload` (false)
+Server restarts no longer reset to vanilla defaults
 */
 
 namespace Oxide.Plugins
 {
-    [Info("Water Works", "nivex", "1.0.5")]
+    [Info("Water Works", "nivex", "1.0.6")]
     [Description("Control the monopoly on your water supplies.")]
     class WaterWorks : RustPlugin
     {
@@ -28,23 +29,23 @@ namespace Oxide.Plugins
             waterJugMod = ItemManager.FindItemDefinition("waterjug")?.GetComponent<ItemModContainer>();
             waterDef = ItemManager.FindItemDefinition("water");
 
-            foreach (var lc in BaseNetworkable.serverEntities.OfType<LiquidContainer>())
-            {
-                SetLiquidContainerStackSize(lc, true);
-            }
-
+            SetLiquidContainerStackSize(true);
             ConfigureWaterDefinitions(true);
             Subscribe(nameof(OnEntitySpawned));
         }
 
         private void Unload()
         {
-            foreach (var lc in BaseNetworkable.serverEntities.OfType<LiquidContainer>())
+            if (Interface.Oxide.IsShuttingDown)
             {
-                SetLiquidContainerStackSize(lc, false);
+                return;
             }
 
-            ConfigureWaterDefinitions(false);
+            if (_config.Reset)
+            {
+                SetLiquidContainerStackSize(false);
+                ConfigureWaterDefinitions(false);
+            }
         }
 
         private void OnEntitySpawned(LiquidContainer lc)
@@ -58,7 +59,15 @@ namespace Oxide.Plugins
 
             if (slot != null && slot.amount > num)
             {
-                slot.amount = num;
+                slot.amount = num;                
+            }
+        }
+
+        private void SetLiquidContainerStackSize(bool state)
+        {
+            foreach (var lc in BaseNetworkable.serverEntities.OfType<LiquidContainer>())
+            {
+                SetLiquidContainerStackSize(lc, state);
             }
         }
 
@@ -78,7 +87,7 @@ namespace Oxide.Plugins
                 lc.maxStackSize = num;
                 lc.inventory.maxStackSize = num;
                 lc.MarkDirty();
-                lc.inventory.MarkDirty();
+                lc.inventory.MarkDirty();                
                 lc.SendNetworkUpdateImmediate();
             }
             else if (lc is WaterCatcher)
@@ -240,6 +249,9 @@ namespace Oxide.Plugins
 
             [JsonProperty(PropertyName = "Water Purifier (Powered) ML Capacity (vanilla: 5000)")]
             public int PoweredWaterPurifier { get; set; } = 25000;
+
+            [JsonProperty(PropertyName = "Reset To Vanilla Defaults On Unload")]
+            public bool Reset { get; set; }
         }
 
         protected override void LoadConfig()
