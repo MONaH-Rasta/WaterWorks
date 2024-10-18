@@ -1,26 +1,13 @@
 ﻿using Newtonsoft.Json;
 using System;
-using System.Collections.Generic;
 using System.Linq;
-using UnityEngine;
-
-/*
-Fixed water purifier capacity not using config value
-Fixed water barrel capacity not using config value
-Added `Water Pump ML Capacity (vanilla: 2000)` (10000)
-Added `Add Amount Of Water To Water Pumps` (30)
-Added `Add Water To Water Pumps Every X Seconds` (20)
-Added `Water Purifier (Powered) ML Capacity (vanilla: 5000)` (25000)
-Updated `Water Jug ML Capacity` default values
-*/
 
 namespace Oxide.Plugins
 {
-    [Info("Water Works", "nivex", "1.0.3")]
+    [Info("Water Works", "nivex", "1.0.4")]
     [Description("Control the monopoly on your water supplies.")]
     class WaterWorks : RustPlugin
     {
-        private Dictionary<WaterCatcher, Action> actions = new Dictionary<WaterCatcher, Action>();
         private ItemModContainer bucketWaterMod;
         private ItemModContainer waterJugMod;
         private ItemDefinition waterDef;
@@ -60,11 +47,28 @@ namespace Oxide.Plugins
             SetLiquidContainerStackSize(lc, true);
         }
 
+        private void SetSlotAmounts(LiquidContainer lc, int num)
+        {
+            var slot = lc.inventory.GetSlot(0);
+
+            if (slot != null && slot.amount > num)
+            {
+                slot.amount = num;
+            }
+        }
+
         private void SetLiquidContainerStackSize(LiquidContainer lc, bool state)
         {
-            if (lc?.prefabID == 3746060889 && _config.WaterBarrel > 0)
+            if (lc == null || lc.IsDestroyed)
+            {
+                return;
+            }
+
+            if (lc.prefabID == 3746060889 && _config.WaterBarrel > 0)
             {
                 int num = state ? _config.WaterBarrel : 20000;
+
+                SetSlotAmounts(lc, num);
 
                 lc.maxStackSize = num;
                 lc.inventory.maxStackSize = num;
@@ -76,9 +80,11 @@ namespace Oxide.Plugins
             {
                 UpdateWaterCatcher(lc as WaterCatcher, state);
             }
-            else if (lc?.prefabID == 1259335874 && _config.PoweredWaterPurifier > 0)
+            else if (lc.prefabID == 1259335874 && _config.PoweredWaterPurifier > 0)
             {
                 int num = state ? _config.PoweredWaterPurifier : 5000;
+
+                SetSlotAmounts(lc, num);
 
                 lc.maxStackSize = num;
                 lc.inventory.maxStackSize = num;
@@ -86,11 +92,14 @@ namespace Oxide.Plugins
                 lc.inventory.MarkDirty();
                 lc.SendNetworkUpdateImmediate();
             }
-            else if (lc?.prefabID == 2905007296 && _config.WaterPurifier > 0)
+            else if (lc.prefabID == 2905007296 && _config.WaterPurifier > 0)
             {
                 var purifier = lc as WaterPurifier;
                 int num = state ? _config.WaterPurifier : 5000;
+                
+                SetSlotAmounts(lc, num);
 
+                purifier.stopWhenOutputFull = true;
                 purifier.waterStorage.maxStackSize = num;
                 purifier.maxStackSize = num;
                 purifier.inventory.maxStackSize = num;
@@ -102,6 +111,8 @@ namespace Oxide.Plugins
             {
                 var pump = lc as WaterPump;
                 int num = state ? _config.WaterPump : 2000;
+
+                SetSlotAmounts(lc, num);
 
                 pump.maxStackSize = num;
                 pump.inventory.maxStackSize = num;
@@ -121,26 +132,30 @@ namespace Oxide.Plugins
 
         private void UpdateWaterCatcher(WaterCatcher wc, bool state)
         {
-            Action action;
-
             if (state)
             {
-                if (wc == null || wc.IsDestroyed || actions.ContainsKey(wc))
+                int num = wc.prefabID == 3418194637 ? _config.StackSizeLarge : _config.StackSizeSmall;
+                SetSlotAmounts(wc, num);
+                wc.maxItemToCreate = _config.WaterCatcherAmount;
+                wc.inventory.maxStackSize = num;
+                wc.Invoke(() =>
                 {
-                    return;
-                }
-
-                actions[wc] = action = new Action(() => AddResource(wc));
-
-                wc.CancelInvoke(wc.CollectWater);
-                wc.InvokeRepeating(action, _config.WaterCatcherInterval, _config.WaterCatcherInterval);
-                wc.inventory.maxStackSize = wc.prefabID == 3418194637 ? _config.StackSizeLarge : _config.StackSizeSmall;
+                    if (wc.IsDestroyed) return;
+                    wc.CancelInvoke(wc.CollectWater);
+                    wc.InvokeRepeating(wc.CollectWater, _config.WaterCatcherInterval, _config.WaterCatcherInterval);
+                }, 0.1f);
             }
-            else if (actions.TryGetValue(wc, out action))
+            else
             {
-                wc.CancelInvoke(action);
-                wc.InvokeRandomized(wc.CollectWater, 60f, 60f, 6f);
-                wc.maxStackSize = wc.prefabID == 3418194637 ? 50000 : 10000;
+                int num = wc.prefabID == 3418194637 ? 50000 : 10000;
+                SetSlotAmounts(wc, num);
+                wc.maxStackSize = num;
+                wc.Invoke(() =>
+                {
+                    if (wc.IsDestroyed) return;
+                    wc.CancelInvoke(wc.CollectWater);
+                    wc.InvokeRandomized(wc.CollectWater, WaterCatcher.collectInterval, WaterCatcher.collectInterval, 6f);
+                }, 0.1f);
             }
         }
 
@@ -148,26 +163,7 @@ namespace Oxide.Plugins
         {
             pump.PumpInterval = state ? _config.WaterPumpInterval : 20f;
             pump.AmountPerPump = state ? _config.WaterPumpAmount : 30;
-            //pump.InvokeRandomized("CreateWater", pump.PumpInterval, pump.PumpInterval, pump.PumpInterval * 0.1f);
-        }
-
-        private void AddResource(WaterCatcher wc)
-        {
-            if (wc.IsFull())
-            {
-                return;
-            }
-
-            float num = 0.25f;
-            num += Climate.GetFog(wc.transform.position) * 2f;
-
-            if (wc.TestIsOutside())
-            {
-                num += Climate.GetRain(wc.transform.position);
-                num += Climate.GetSnow(wc.transform.position) * 0.5f;
-            }
-
-            wc.AddResource(Mathf.CeilToInt(_config.WaterCatcherAmount * num));
+            //pump.Invoke(() => pump.InvokeRandomized(pump.CreateWater, pump.PumpInterval, pump.PumpInterval, pump.PumpInterval * 0.1f), 0.1f);
         }
 
         #region Configuration
