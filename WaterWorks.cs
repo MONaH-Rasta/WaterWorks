@@ -6,7 +6,7 @@ using System.Collections.Generic;
 
 namespace Oxide.Plugins
 {
-    [Info("Water Works", "nivex", "1.0.9")]
+    [Info("Water Works", "nivex", "1.1.0")]
     [Description("Control the monopoly on your water supplies.")]
     class WaterWorks : RustPlugin
     {
@@ -16,7 +16,8 @@ namespace Oxide.Plugins
             "waterjug",
             "pistol.water",
             "gun.water",
-            "smallwaterbottle"
+            "smallwaterbottle",
+            "botabag"  // Новый предмет
         };
 
         private readonly Dictionary<string, ItemConfig> _itemConfigs = new();
@@ -233,15 +234,6 @@ namespace Oxide.Plugins
                 default:
                     break;
             }
-        }
-
-        private T LookupPrefab<T>(T entity) where T : BaseEntity
-        {
-            var prefab = entity.LookupPrefab();
-            if (prefab == null) return entity;
-            var component = prefab.GetComponent<T>();
-            if (component == null) return entity;
-            return component;
         }
 
         private void SetSlotAmounts(LiquidContainer lc, int num)
@@ -492,6 +484,7 @@ namespace Oxide.Plugins
             "pistol.water" => config.WaterPistol,
             "gun.water" => config.WaterGun,
             "smallwaterbottle" => config.SmallWaterBottle,
+            "botabag" => config.BotaBag,
             _ => 0
         };
 
@@ -552,10 +545,10 @@ namespace Oxide.Plugins
             public int WaterBucket { get; set; } = 10000;
 
             [JsonProperty(PropertyName = "Water Ground Pool Capacity (vanilla: 500)")]
-            public int GroundPool { get; set; } = 100000;
+            public int GroundPool { get; set; } = 500;
 
             [JsonProperty(PropertyName = "Water Big Ground Pool Capacity (vanilla: 2000)")]
-            public int BigGroundPool { get; set; } = 200000;
+            public int BigGroundPool { get; set; } = 2000;
 
             [JsonProperty(PropertyName = "Water Purifier ML Capacity (vanilla: 5000)")]
             public int WaterPurifier { get; set; } = 25000;
@@ -572,6 +565,9 @@ namespace Oxide.Plugins
             [JsonProperty(PropertyName = "Small Water Bottle ML Capacity (vanilla: 250)")]
             public int SmallWaterBottle { get; set; } = 1000;
 
+            [JsonProperty(PropertyName = "Bota Bag ML Capacity (default: 3000)")]
+            public int BotaBag { get; set; } = 3000;
+
             [JsonProperty(PropertyName = "Reset To Vanilla Defaults On Unload")]
             public bool Reset { get; set; }
         }
@@ -579,7 +575,7 @@ namespace Oxide.Plugins
         protected override void LoadConfig()
         {
             base.LoadConfig();
-
+            canSaveConfig = false;
             try
             {
                 config = Config.ReadObject<Configuration>();
@@ -594,7 +590,7 @@ namespace Oxide.Plugins
             }
         }
 
-        private bool canSaveConfig;
+        private bool canSaveConfig = true;
 
         protected override void SaveConfig()
         {
