@@ -6,7 +6,7 @@ using System.Collections.Generic;
 
 namespace Oxide.Plugins
 {
-    [Info("Water Works", "nivex", "1.1.0")]
+    [Info("Water Works", "nivex", "1.1.1")]
     [Description("Control the monopoly on your water supplies.")]
     class WaterWorks : RustPlugin
     {
@@ -366,15 +366,15 @@ namespace Oxide.Plugins
             if (state && entityConfig.ConfigMaxStackSize > 0)
             {
                 purifier.stopWhenOutputFull = true;
-                purifier.waterStorage.maxStackSize = entityConfig.ConfigMaxStackSize;
-                purifier.waterStorage.MarkDirtyForceUpdateOutputs();
+                purifier.purifiedWaterStorage.maxStackSize = entityConfig.ConfigMaxStackSize;
+                purifier.purifiedWaterStorage.MarkDirtyForceUpdateOutputs();
 
                 SetMaxStackSize(purifier, entityConfig.ConfigMaxStackSize);
             }
             else if (!state && entityConfig.DefaultMaxStackSize > 0)
             {
-                purifier.waterStorage.maxStackSize = entityConfig.DefaultMaxStackSize;
-                purifier.waterStorage.MarkDirtyForceUpdateOutputs();
+                purifier.purifiedWaterStorage.maxStackSize = entityConfig.DefaultMaxStackSize;
+                purifier.purifiedWaterStorage.MarkDirtyForceUpdateOutputs();
 
                 SetMaxStackSize(purifier, entityConfig.DefaultMaxStackSize);
             }
