@@ -6,7 +6,7 @@ using System.Collections.Generic;
 
 namespace Oxide.Plugins
 {
-    [Info("Water Works", "nivex", "1.1.1")]
+    [Info("Water Works", "nivex", "1.1.3")]
     [Description("Control the monopoly on your water supplies.")]
     class WaterWorks : RustPlugin
     {
@@ -17,17 +17,14 @@ namespace Oxide.Plugins
             "pistol.water",
             "gun.water",
             "smallwaterbottle",
-            "botabag"  // Новый предмет
+            "botabag"
         };
 
         private readonly Dictionary<string, ItemConfig> _itemConfigs = new();
 
-        private readonly Dictionary<string, EntityConfig> _entityConfigs = new();
-
         private void Init()
         {
             Unsubscribe(nameof(OnEntitySpawned));
-            AddCovalenceCommand("wwstats", nameof(CommandStats));
         }
 
         private void OnServerInitialized()
@@ -35,7 +32,7 @@ namespace Oxide.Plugins
             foreach (var shortname in _itemShortnames)
             {
                 ItemDefinition def = ItemManager.FindItemDefinition(shortname);
-                if (def != null && def.TryGetComponent<ItemModContainer>(out var container))
+                if (def != null && def.TryGetComponent(out ItemModContainer container))
                 {
                     var itemConfig = new ItemConfig
                     {
@@ -54,7 +51,6 @@ namespace Oxide.Plugins
                 }
             }
 
-            InitializeEntityConfigs();
             SetLiquidContainerStackSize(true);
             ConfigureWaterDefinitions(true);
             Subscribe(nameof(OnEntitySpawned));
@@ -63,71 +59,6 @@ namespace Oxide.Plugins
             {
                 WaterTypes.WaterItemDef.stackable = int.MaxValue;
             }
-        }
-
-        private void InitializeEntityConfigs()
-        {
-            _entityConfigs["waterbarrel"] = new EntityConfig
-            {
-                ShortPrefabName = "waterbarrel",
-                DefaultMaxStackSize = 20000, // Vanilla value
-                ConfigMaxStackSize = config.WaterBarrel
-            };
-
-            _entityConfigs["water_catcher_small"] = new EntityConfig
-            {
-                ShortPrefabName = "water_catcher_small",
-                DefaultMaxStackSize = 10000, // Vanilla value
-                ConfigMaxStackSize = config.SmallWaterCatcher.StackSize,
-                MaxItemToCreate = config.SmallWaterCatcher.MaxItemToCreate,
-                Interval = config.SmallWaterCatcher.Interval,
-            };
-
-            _entityConfigs["water_catcher_large"] = new EntityConfig
-            {
-                ShortPrefabName = "water_catcher_large",
-                DefaultMaxStackSize = 50000, // Vanilla value
-                ConfigMaxStackSize = config.LargeWaterCatcher.StackSize,
-                MaxItemToCreate = config.LargeWaterCatcher.MaxItemToCreate,
-                Interval = config.LargeWaterCatcher.Interval,
-            };
-
-            _entityConfigs["poweredwaterpurifier.deployed"] = new EntityConfig
-            {
-                ShortPrefabName = "poweredwaterpurifier.deployed",
-                DefaultMaxStackSize = 5000, // Vanilla value
-                ConfigMaxStackSize = config.PoweredWaterPurifier
-            };
-
-            _entityConfigs["waterpurifier.deployed"] = new EntityConfig
-            {
-                ShortPrefabName = "waterpurifier.deployed",
-                DefaultMaxStackSize = 5000, // Vanilla value
-                ConfigMaxStackSize = config.WaterPurifier
-            };
-
-            _entityConfigs["water.pump.deployed"] = new EntityConfig
-            {
-                ShortPrefabName = "water.pump.deployed",
-                DefaultMaxStackSize = 2000, // Vanilla value
-                ConfigMaxStackSize = config.WaterPump.StackSize,
-                PumpInterval = config.WaterPump.Interval,
-                AmountPerPump = config.WaterPump.Amount
-            };
-
-            _entityConfigs["paddlingpool.deployed"] = new EntityConfig
-            {
-                ShortPrefabName = "paddlingpool.deployed",
-                DefaultMaxStackSize = 500, // Vanilla value
-                ConfigMaxStackSize = config.GroundPool
-            };
-
-            _entityConfigs["abovegroundpool.deployed"] = new EntityConfig
-            {
-                ShortPrefabName = "abovegroundpool.deployed",
-                DefaultMaxStackSize = 2000, // Vanilla value
-                ConfigMaxStackSize = config.BigGroundPool
-            };
         }
 
         private void Unload()
@@ -143,40 +74,6 @@ namespace Oxide.Plugins
         {
             SetLiquidContainerStackSize(lc, true);
         }
-
-        private void CommandStats(IPlayer user, string command, string[] args)
-        {
-            if (!user.IsAdmin) return;
-
-            Puts("=== Item Configurations ===");
-            foreach (var itemConfig in _itemConfigs.Values)
-            {
-                Puts("Item: {0}, ItemID: {1}, Current MaxStackSize: {2}, Default MaxStackSize: {3}",
-                    itemConfig.Shortname,
-                    itemConfig.ItemId,
-                    itemConfig.ConfigMaxStackSize > 0 ? itemConfig.ConfigMaxStackSize : itemConfig.DefaultMaxStackSize,
-                    itemConfig.DefaultMaxStackSize);
-            }
-
-            Puts("=== Entity Configurations ===");
-            foreach (var entityConfig in _entityConfigs.Values)
-            {
-                Puts("Entity: {0}, Current MaxStackSize: {1}, Default MaxStackSize: {2}",
-                    entityConfig.ShortPrefabName,
-                    entityConfig.ConfigMaxStackSize > 0 ? entityConfig.ConfigMaxStackSize : entityConfig.DefaultMaxStackSize,
-                    entityConfig.DefaultMaxStackSize);
-
-                if (entityConfig.ShortPrefabName.Contains("water_catcher"))
-                {
-                    Puts("  MaxItemToCreate: {0}, Interval: {1}", entityConfig.MaxItemToCreate, entityConfig.Interval);
-                }
-                if (entityConfig.ShortPrefabName == "water.pump.deployed")
-                {
-                    Puts("  PumpInterval: {0}, AmountPerPump: {1}", entityConfig.PumpInterval, entityConfig.AmountPerPump);
-                }
-            }
-        }
-
         private void SetLiquidContainerStackSize(bool state)
         {
             foreach (BaseNetworkable networkable in BaseNetworkable.serverEntities)
@@ -195,43 +92,41 @@ namespace Oxide.Plugins
                 return;
             }
 
-            if (!_entityConfigs.TryGetValue(lc.ShortPrefabName, out var entityConfig))
+            if (lc is WaterWell well)
             {
+                if (config.WaterWell.Enabled) UpdateWaterWell(well, state);
                 return;
             }
 
             switch (lc.ShortPrefabName)
             {
                 case "waterbarrel":
-                    UpdateWaterBarrel(lc, state, entityConfig);
+                    UpdateContainer(lc, state, config.WaterBarrel);
                     break;
 
                 case "water_catcher_small":
+                    UpdateWaterCatcher(lc as WaterCatcher, state, config.SmallWaterCatcher.StackSize, config.SmallWaterCatcher.MaxItemToCreate, config.SmallWaterCatcher.Interval);
+                    break;
+
                 case "water_catcher_large":
-                    UpdateWaterCatcher(lc as WaterCatcher, state, entityConfig);
+                    UpdateWaterCatcher(lc as WaterCatcher, state, config.LargeWaterCatcher.StackSize, config.LargeWaterCatcher.MaxItemToCreate, config.LargeWaterCatcher.Interval);
                     break;
 
                 case "poweredwaterpurifier.deployed":
-                    UpdatePoweredWaterPurifier(lc, state, entityConfig);
-                    break;
-
                 case "waterpurifier.deployed":
-                    UpdateWaterPurifier(lc as WaterPurifier, state, entityConfig);
+                    UpdateWaterPurifier(lc as WaterPurifier, state);
                     break;
 
                 case "water.pump.deployed":
-                    UpdateWaterPump(lc as WaterPump, state, entityConfig);
+                    UpdateWaterPump(lc as WaterPump, state);
                     break;
 
                 case "paddlingpool.deployed":
-                    UpdateGroundPool(lc, state, entityConfig);
+                    UpdateContainer(lc, state, config.GroundPool);
                     break;
 
                 case "abovegroundpool.deployed":
-                    UpdateBigGroundPool(lc, state, entityConfig);
-                    break;
-
-                default:
+                    UpdateContainer(lc, state, config.BigGroundPool);
                     break;
             }
         }
@@ -263,7 +158,7 @@ namespace Oxide.Plugins
             foreach (var itemConfig in _itemConfigs.Values)
             {
                 ItemDefinition def = ItemManager.FindItemDefinition(itemConfig.Shortname);
-                if (def != null && def.TryGetComponent<ItemModContainer>(out var container))
+                if (def != null && def.TryGetComponent(out ItemModContainer container))
                 {
                     if (state && itemConfig.ConfigMaxStackSize > 0)
                     {
@@ -277,200 +172,118 @@ namespace Oxide.Plugins
             }
         }
 
-        private void UpdateWaterBarrel(LiquidContainer lc, bool state, EntityConfig entityConfig)
+        private void UpdateContainer(LiquidContainer lc, bool state, int configuredCapacity)
         {
-            if (entityConfig.ConfigMaxStackSize > 0)
+            int capacity = state && configuredCapacity > 0 ? configuredCapacity : lc.LookupPrefab<LiquidContainer>()?.maxStackSize ?? 0;
+            if (capacity > 0)
             {
-                int num = state ? entityConfig.ConfigMaxStackSize : entityConfig.DefaultMaxStackSize;
-
-                if (num > 0)
-                {
-                    SetMaxStackSize(lc, num);
-
-                    SetSlotAmounts(lc, num);
-                }
+                SetMaxStackSize(lc, capacity);
+                SetSlotAmounts(lc, capacity);
             }
         }
 
-        private void UpdateWaterCatcher(WaterCatcher wc, bool state, EntityConfig entityConfig)
+        private void UpdateWaterCatcher(WaterCatcher wc, bool state, int configuredCapacity, float configuredAmount, float configuredInterval)
         {
             if (wc == null) return;
 
-            if (state)
+            WaterCatcher prefab = wc.LookupPrefab<WaterCatcher>();
+            int capacity = state && configuredCapacity > 0 ? configuredCapacity : prefab?.maxStackSize ?? 0;
+            if (capacity > 0)
             {
-                if (entityConfig.ConfigMaxStackSize > 0)
-                {
-                    wc.maxStackSize = wc.inventory.maxStackSize = entityConfig.ConfigMaxStackSize;
-                }
-                if (entityConfig.MaxItemToCreate > 0)
-                {
-                    wc.maxItemToCreate = entityConfig.MaxItemToCreate;
-                }
-
-                SetSlotAmounts(wc, wc.maxStackSize);
-
-                if (entityConfig.Interval > 0)
-                {
-                    wc.Invoke(() =>
-                    {
-                        if (wc.IsDestroyed) return;
-                        wc.CancelInvoke(wc.CollectWater);
-                        wc.InvokeRepeating(wc.CollectWater, entityConfig.Interval, entityConfig.Interval);
-                    }, 0.1f);
-                }
+                wc.maxStackSize = wc.inventory.maxStackSize = capacity;
+                SetSlotAmounts(wc, capacity);
             }
-            else
+
+            if (state && configuredAmount > 0f) wc.maxItemToCreate = configuredAmount;
+            else if (prefab != null) wc.maxItemToCreate = prefab.maxItemToCreate;
+
+            float interval = state && configuredInterval > 0f ? configuredInterval : prefab?.overrideCollectInterval ?? wc.overrideCollectInterval;
+            if (wc.overrideCollectInterval != interval)
             {
-                if (entityConfig.ConfigMaxStackSize > 0 && entityConfig.DefaultMaxStackSize > 0)
-                {
-                    wc.maxStackSize = wc.inventory.maxStackSize = entityConfig.DefaultMaxStackSize;
-                }
-                if (entityConfig.MaxItemToCreate > 0 && entityConfig.DefaultMaxItemToCreate > 0)
-                {
-                    wc.maxItemToCreate = entityConfig.DefaultMaxItemToCreate;
-                }
-
-                SetSlotAmounts(wc, wc.maxStackSize);
-
-                if (entityConfig.Interval > 0)
-                {
-                    wc.Invoke(() =>
-                    {
-                        if (wc.IsDestroyed) return;
-                        wc.CancelInvoke(wc.CollectWater);
-                        wc.InvokeRandomized(wc.CollectWater, WaterCatcher.collectInterval, WaterCatcher.collectInterval, 6f);
-                    }, 0.1f);
-                }
+                wc.overrideCollectInterval = interval;
+                float nextInterval = interval > 0f ? interval : WaterCatcher.collectInterval;
+                wc.nextCollect = nextInterval + UnityEngine.Random.Range(0f, nextInterval * 0.1f);
             }
         }
 
-        private void UpdatePoweredWaterPurifier(LiquidContainer lc, bool state, EntityConfig entityConfig)
-        {
-            if (entityConfig.ConfigMaxStackSize > 0)
-            {
-                int num = state ? entityConfig.ConfigMaxStackSize : entityConfig.DefaultMaxStackSize;
-
-                if (num > 0)
-                {
-                    SetMaxStackSize(lc, num);
-
-                    SetSlotAmounts(lc, num);
-                }
-            }
-        }
-
-        private void UpdateWaterPurifier(WaterPurifier purifier, bool state, EntityConfig entityConfig)
+        private void UpdateWaterPurifier(WaterPurifier purifier, bool state)
         {
             if (purifier == null) return;
 
-            if (state && entityConfig.ConfigMaxStackSize > 0)
+            WaterPurifier prefab = purifier.LookupPrefab<WaterPurifier>();
+            bool powered = purifier is PoweredWaterPurifier;
+            int configuredInput = powered ? config.PoweredWaterPurifier : config.WaterPurifier;
+            int inputCapacity = state && configuredInput > 0 ? configuredInput : prefab?.maxStackSize ?? 0;
+            if (inputCapacity > 0)
             {
-                purifier.stopWhenOutputFull = true;
-                purifier.purifiedWaterStorage.maxStackSize = entityConfig.ConfigMaxStackSize;
-                purifier.purifiedWaterStorage.MarkDirtyForceUpdateOutputs();
-
-                SetMaxStackSize(purifier, entityConfig.ConfigMaxStackSize);
+                SetMaxStackSize(purifier, inputCapacity);
+                if (powered) SetSlotAmounts(purifier, inputCapacity);
             }
-            else if (!state && entityConfig.DefaultMaxStackSize > 0)
-            {
-                purifier.purifiedWaterStorage.maxStackSize = entityConfig.DefaultMaxStackSize;
-                purifier.purifiedWaterStorage.MarkDirtyForceUpdateOutputs();
 
-                SetMaxStackSize(purifier, entityConfig.DefaultMaxStackSize);
+            LiquidContainer output = purifier.purifiedWaterStorage;
+            if (output != null)
+            {
+                LiquidContainer outputPrefab = output.LookupPrefab<LiquidContainer>();
+                int configuredOutput = powered ? config.PoweredWaterPurifierOutput : config.WaterPurifierOutput;
+                int outputCapacity = state && configuredOutput > 0 ? configuredOutput : outputPrefab?.maxStackSize ?? 0;
+                if (outputCapacity > 0)
+                {
+                    SetMaxStackSize(output, outputCapacity);
+                    output.MarkDirtyForceUpdateOutputs();
+                }
+            }
+
+            if (prefab != null)
+            {
+                int processing = powered ? config.PoweredWaterPurifierProcessingPerMinute : config.WaterPurifierProcessingPerMinute;
+                int ratio = powered ? config.PoweredWaterPurifierFreshWaterRatio : config.WaterPurifierFreshWaterRatio;
+
+                purifier.waterToProcessPerMinute = state && processing > 0 ? processing : prefab.waterToProcessPerMinute;
+                purifier.freshWaterRatio = state && ratio > 0 ? ratio : prefab.freshWaterRatio;
+                purifier.stopWhenOutputFull = state ? (powered ? config.PoweredWaterPurifierStopWhenOutputFull : config.WaterPurifierStopWhenOutputFull) : prefab.stopWhenOutputFull;
             }
         }
 
-        private void UpdateWaterPump(WaterPump pump, bool state, EntityConfig entityConfig)
+        private void UpdateWaterPump(WaterPump pump, bool state)
         {
             if (pump == null) return;
 
-            if (state && entityConfig.ConfigMaxStackSize > 0)
+            WaterPump prefab = pump.LookupPrefab<WaterPump>();
+            int capacity = state && config.WaterPump.StackSize > 0 ? config.WaterPump.StackSize : prefab?.maxStackSize ?? 0;
+            if (capacity > 0)
             {
-                if (entityConfig.PumpInterval > 0)
-                {
-                    pump.PumpInterval = entityConfig.PumpInterval;
-                }
-
-                if (entityConfig.AmountPerPump > 0)
-                {
-                    pump.AmountPerPump = entityConfig.AmountPerPump;
-                }
-
-                if (entityConfig.ConfigMaxStackSize > 0)
-                {
-                    SetMaxStackSize(pump, entityConfig.ConfigMaxStackSize);
-
-                    SetSlotAmounts(pump, entityConfig.ConfigMaxStackSize);
-                }
-
-                //Puts("Modified water pump ({0} maxStackSize, {1} interval, {2} amount per pump)", pump.maxStackSize, pump.PumpInterval, pump.AmountPerPump);
-
-                if (!pump.IsPowered())
-                {
-                    pump.CancelInvoke(pump.CreateWater);
-                    return;
-                }
-
-                pump.CancelInvoke(pump.CreateWater);
-                pump.InvokeRandomized(pump.CreateWater, pump.PumpInterval, pump.PumpInterval, pump.PumpInterval * 0.1f);
+                SetMaxStackSize(pump, capacity);
+                SetSlotAmounts(pump, capacity);
             }
-            else if (!state)
+
+            int amount = state && config.WaterPump.Amount > 0 ? config.WaterPump.Amount : prefab?.AmountPerPump ?? 0;
+            if (amount > 0) pump.AmountPerPump = amount;
+
+            float interval = state && config.WaterPump.Interval > 0f ? config.WaterPump.Interval : prefab?.PumpInterval ?? 0f;
+            if (interval > 0f && pump.PumpInterval != interval)
             {
-                if (entityConfig.DefaultPumpInterval > 0)
-                {
-                    pump.PumpInterval = entityConfig.DefaultPumpInterval;
-                }
-
-                if (entityConfig.DefaultAmountPerPump > 0)
-                {
-                    pump.AmountPerPump = entityConfig.DefaultAmountPerPump;
-                }
-
-                if (entityConfig.DefaultMaxStackSize > 0)
-                {
-                    SetMaxStackSize(pump, entityConfig.DefaultMaxStackSize);
-
-                    SetSlotAmounts(pump, entityConfig.DefaultMaxStackSize);
-                }
-
-                //Puts("Reverted water pump ({0} maxStackSize, {1} interval, {2} amount per pump)", pump.maxStackSize, pump.PumpInterval, pump.AmountPerPump);
-
+                pump.PumpInterval = interval;
                 if (pump.IsPowered())
                 {
-                    pump.CancelInvoke(pump.CreateWater);
-                    pump.InvokeRandomized(pump.CreateWater, pump.PumpInterval, pump.PumpInterval, pump.PumpInterval * 0.1f);
+                    pump.createWaterAction ??= pump.CreateWater;
+                    pump.CancelInvoke(pump.createWaterAction);
+                    pump.InvokeRandomized(pump.createWaterAction, interval, interval, interval * 0.1f);
                 }
             }
         }
 
-        private void UpdateGroundPool(LiquidContainer lc, bool state, EntityConfig entityConfig)
+        private void UpdateWaterWell(WaterWell well, bool state)
         {
-            if (entityConfig.ConfigMaxStackSize > 0)
+            WaterWell prefab = well.LookupPrefab<WaterWell>();
+            int capacity = state && config.WaterWell.StackSize > 0 ? config.WaterWell.StackSize : prefab?.maxStackSize ?? 0;
+            if (capacity > 0)
             {
-                int num = state ? entityConfig.ConfigMaxStackSize : entityConfig.DefaultMaxStackSize;
-
-                if (num > 0)
-                {
-                    SetMaxStackSize(lc, num);
-
-                    SetSlotAmounts(lc, num);
-                }
+                SetMaxStackSize(well, capacity);
+                SetSlotAmounts(well, capacity);
             }
-        }
 
-        private void UpdateBigGroundPool(LiquidContainer lc, bool state, EntityConfig entityConfig)
-        {
-            if (entityConfig.ConfigMaxStackSize > 0)
-            {
-                int num = state ? entityConfig.ConfigMaxStackSize : entityConfig.DefaultMaxStackSize;
-
-                if (num > 0)
-                {
-                    SetMaxStackSize(lc, num);
-
-                    SetSlotAmounts(lc, num);
-                }
-            }
+            int amount = state && config.WaterWell.WaterPerPump > 0 ? config.WaterWell.WaterPerPump : prefab?.waterPerPump ?? 0;
+            if (amount > 0) well.waterPerPump = amount;
         }
 
         #region Configuration
@@ -491,85 +304,124 @@ namespace Oxide.Plugins
         private class SmallWaterCatcherSettings
         {
             [JsonProperty(PropertyName = "Stack Size (vanilla: 10000)")]
-            public int StackSize { get; set; } = 50000;
+            public int StackSize = 50000;
 
             [JsonProperty(PropertyName = "Add Amount Of Water (vanilla: 10)")]
-            public float MaxItemToCreate { get; set; } = 20f;
+            public float MaxItemToCreate = 20f;
 
             [JsonProperty(PropertyName = "Add Water Every X Seconds (vanilla: 60)")]
-            public float Interval { get; set; } = 30f;
+            public float Interval = 30f;
         }
 
         private class LargeWaterCatcherSettings
         {
             [JsonProperty(PropertyName = "Stack Size (vanilla: 50000)")]
-            public int StackSize { get; set; } = 250000;
+            public int StackSize = 250000;
 
             [JsonProperty(PropertyName = "Add Amount Of Water (vanilla: 30)")]
-            public float MaxItemToCreate { get; set; } = 60f;
+            public float MaxItemToCreate = 60f;
 
             [JsonProperty(PropertyName = "Add Water Every X Seconds (vanilla: 60)")]
-            public float Interval { get; set; } = 30f;
+            public float Interval = 30f;
         }
 
         private class WaterPumpSettings
         {
             [JsonProperty(PropertyName = "ML Capacity (vanilla: 2000)")]
-            public int StackSize { get; set; } = 10000;
+            public int StackSize = 10000;
 
             [JsonProperty(PropertyName = "Add Amount Of Water To Water Pumps (Vanilla: 85)")]
-            public int Amount { get; set; } = 130;
+            public int Amount = 130;
 
             [JsonProperty(PropertyName = "Add Water To Water Pumps Every X Seconds (Vanilla: 10)")]
-            public float Interval { get; set; } = 10f;
+            public float Interval = 10f;
+        }
+
+        private class WaterWellSettings
+        {
+            [JsonProperty(PropertyName = "Enabled")]
+            public bool Enabled;
+
+            [JsonProperty(PropertyName = "ML Capacity (vanilla: 5000)")]
+            public int StackSize = 25000;
+
+            [JsonProperty(PropertyName = "Water Per Pump (vanilla: 100)")]
+            public int WaterPerPump = 250;
         }
 
         private class Configuration
         {
             [JsonProperty(PropertyName = "Small Water Catcher")]
-            public SmallWaterCatcherSettings SmallWaterCatcher { get; set; } = new();
+            public SmallWaterCatcherSettings SmallWaterCatcher = new();
 
             [JsonProperty(PropertyName = "Large Water Catcher")]
-            public LargeWaterCatcherSettings LargeWaterCatcher { get; set; } = new();
+            public LargeWaterCatcherSettings LargeWaterCatcher = new();
 
             [JsonProperty(PropertyName = "Water Pump")]
-            public WaterPumpSettings WaterPump { get; set; } = new();
+            public WaterPumpSettings WaterPump = new();
+
+            [JsonProperty(PropertyName = "Water Well")]
+            public WaterWellSettings WaterWell = new();
 
             [JsonProperty(PropertyName = "Water Jug ML Capacity (vanilla: 5000)")]
-            public int WaterJug { get; set; } = 25000;
+            public int WaterJug = 25000;
 
             [JsonProperty(PropertyName = "Water Barrel ML Capacity (vanilla: 20000)")]
-            public int WaterBarrel { get; set; } = 100000;
+            public int WaterBarrel = 100000;
 
             [JsonProperty(PropertyName = "Water Bucket ML Capacity (vanilla: 2000)")]
-            public int WaterBucket { get; set; } = 10000;
+            public int WaterBucket = 10000;
 
             [JsonProperty(PropertyName = "Water Ground Pool Capacity (vanilla: 500)")]
-            public int GroundPool { get; set; } = 500;
+            public int GroundPool = 500;
 
             [JsonProperty(PropertyName = "Water Big Ground Pool Capacity (vanilla: 2000)")]
-            public int BigGroundPool { get; set; } = 2000;
+            public int BigGroundPool = 2000;
 
             [JsonProperty(PropertyName = "Water Purifier ML Capacity (vanilla: 5000)")]
-            public int WaterPurifier { get; set; } = 25000;
+            public int WaterPurifier = 25000;
+
+            [JsonProperty(PropertyName = "Water Purifier Fresh Water Output ML Capacity (vanilla: 2000)")]
+            public int WaterPurifierOutput = 25000;
+
+            [JsonProperty(PropertyName = "Water Purifier Processing Per Minute (vanilla: 1000)")]
+            public int WaterPurifierProcessingPerMinute;
+
+            [JsonProperty(PropertyName = "Water Purifier Fresh Water Ratio (vanilla: 4)")]
+            public int WaterPurifierFreshWaterRatio;
+
+            [JsonProperty(PropertyName = "Water Purifier Stop When Output Full")]
+            public bool WaterPurifierStopWhenOutputFull;
 
             [JsonProperty(PropertyName = "Water Purifier (Powered) ML Capacity (vanilla: 5000)")]
-            public int PoweredWaterPurifier { get; set; } = 25000;
+            public int PoweredWaterPurifier = 25000;
+
+            [JsonProperty(PropertyName = "Water Purifier (Powered) Fresh Water Output ML Capacity (vanilla: 5000)")]
+            public int PoweredWaterPurifierOutput = 25000;
+
+            [JsonProperty(PropertyName = "Water Purifier (Powered) Processing Per Minute (vanilla: 4000)")]
+            public int PoweredWaterPurifierProcessingPerMinute;
+
+            [JsonProperty(PropertyName = "Water Purifier (Powered) Fresh Water Ratio (vanilla: 2)")]
+            public int PoweredWaterPurifierFreshWaterRatio;
+
+            [JsonProperty(PropertyName = "Water Purifier (Powered) Stop When Output Full")]
+            public bool PoweredWaterPurifierStopWhenOutputFull = true;
 
             [JsonProperty(PropertyName = "Water Pistol ML Capacity (vanilla: 250)")]
-            public int WaterPistol { get; set; } = 500;
+            public int WaterPistol = 500;
 
             [JsonProperty(PropertyName = "Water Gun ML Capacity (vanilla: 1000)")]
-            public int WaterGun { get; set; } = 2000;
+            public int WaterGun = 2000;
 
             [JsonProperty(PropertyName = "Small Water Bottle ML Capacity (vanilla: 250)")]
-            public int SmallWaterBottle { get; set; } = 1000;
+            public int SmallWaterBottle = 1000;
 
             [JsonProperty(PropertyName = "Bota Bag ML Capacity (default: 3000)")]
-            public int BotaBag { get; set; } = 3000;
+            public int BotaBag = 3000;
 
             [JsonProperty(PropertyName = "Reset To Vanilla Defaults On Unload")]
-            public bool Reset { get; set; }
+            public bool Reset;
         }
 
         protected override void LoadConfig()
@@ -608,28 +460,10 @@ namespace Oxide.Plugins
 
         private class ItemConfig
         {
-            public string Shortname { get; set; }
-            public int ItemId { get; set; }
-            public int DefaultMaxStackSize { get; set; }
-            public int ConfigMaxStackSize { get; set; }
-        }
-
-        private class EntityConfig
-        {
-            public string ShortPrefabName { get; set; }
-            public int DefaultMaxStackSize { get; set; }
-            public int ConfigMaxStackSize { get; set; }
-
-            // For Water Catchers
-            public float DefaultMaxItemToCreate { get; set; } = 10f; // Vanilla value
-            public float MaxItemToCreate { get; set; }
-            public float Interval { get; set; }
-
-            // For Water Pumps
-            public float DefaultPumpInterval { get; set; } = 10f; // Vanilla value
-            public float PumpInterval { get; set; }
-            public int DefaultAmountPerPump { get; set; } = 85; // Vanilla value
-            public int AmountPerPump { get; set; }
+            public string Shortname;
+            public int ItemId;
+            public int DefaultMaxStackSize;
+            public int ConfigMaxStackSize;
         }
 
         #endregion
